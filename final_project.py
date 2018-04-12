@@ -5,8 +5,19 @@ from bs4 import BeautifulSoup
 import requests
 import json
 import sqlite3
+import plotly.plotly as py
+import plotly.graph_objs as go
 
-#TO DO: write unit tests, plotly, interactive
+import plotly
+
+plotly_api_key = secrets.plotly_api
+
+plotly.tools.set_credentials_file(username='natc23', api_key= plotly_api_key)
+
+#TO DO: write unit tests
+#FIX: connect blog_identifier (url) to username and get rid of blogname in posts
+# Close sqlite connections !!! esp in graphs!!! and interactive !!!
+# account for www. https:// and http:// in user input
 
 consumer_key = secrets.oauth_consumer_key
 consumer_secret = secrets.oauth_consumer_secret
@@ -75,7 +86,7 @@ def get_tumblr_post_data_using_cache(blog_identifier):
         return TUMBLR_POST_CACHE_DICT[unique_ident]
 
     else:
-        resp = client.posts(blog_identifier, limit=25)
+        resp = client.posts(blog_identifier, limit=75)
         TUMBLR_POST_CACHE_DICT[unique_ident] = resp
         fref = open('tumblr_post_data.json', 'w')
         dumped_data = json.dumps(TUMBLR_POST_CACHE_DICT)
@@ -162,27 +173,39 @@ def get_account_info(account_identifier):
             try:
                 blog = data['blog']
                 user_name = blog['name']
+                url = blog['url']
                 blog_title = blog['title']
                 description1 = blog['description']
                 description2 = description1.replace('<p>','')
                 description = description2.replace('</p>', '')
                 posts_count = blog['posts']
-                info = (user_name,blog_title,description,posts_count)
+                can_ask = blog['ask']
+                if can_ask == True:
+                    can_ask = 'yes'
+                if can_ask == False:
+                    can_ask = 'no'
+                info = (user_name, url, blog_title,description,posts_count, can_ask)
                 account_data.append(info)
             except:
-                info = ('NULL', 'NULL', 'NULL', 'NULL')
+                info = ('NULL', 'NULL', 'NULL', 'NULL', 'NULL', 'NULL')
                 account_data.append(info)
 
     else:
         data = get_tumblr_data_using_cache(account_identifier)
         blog = data['blog']
         user_name = blog['name']
+        url = blog['url']
         blog_title = blog['title']
         description1 = blog['description']
         description2 = description1.replace('<p>','')
         description = description2.replace('</p>', '')
         posts_count = blog['posts']
-        info = (user_name,blog_title,description,posts_count)
+        can_ask = blog['ask']
+        if can_ask == True:
+            can_ask = 'yes'
+        if can_ask == False:
+            can_ask = 'no'
+        info = (user_name, url, blog_title,description,posts_count, can_ask)
         account_data.append(info)
     return account_data
 
@@ -207,6 +230,10 @@ def get_post_data(account_identifier):
                         post_id = post['id']
                         blog_name = post['blog_name']
                         post_url = post['post_url']
+                        if 'http://' in post_url:
+                            post_url = post_url.replace('http://', '')
+                        if 'https://' in post_url:
+                            post_url = post_url.replace('https://', '')
                         post_type = post['type']
                         date = post['date']
                         note_count = post['note_count']
@@ -221,6 +248,10 @@ def get_post_data(account_identifier):
             post_id = post['id']
             blog_name = post['blog_name']
             post_url = post['post_url']
+            if 'http://' in post_url:
+                post_url = post_url.replace('http://', '')
+            if 'https://' in post_url:
+                post_url = post_url.replace('https://', '')
             post_type = post['type']
             date = post['date']
             note_count = post['note_count']
@@ -228,10 +259,6 @@ def get_post_data(account_identifier):
             post_data.append(info)
 
     return post_data
-
-################################################ How to get tumblrs for table
-scraped_list = get_best_tumblrs()
-search = input("What tumblr user would you like to receive information on? (enter user's url): ")
 
 
 #MAKE DATA BASE
@@ -255,10 +282,12 @@ def init_db():
     statement = '''
         CREATE TABLE 'Blogs' (
             'Id' INTEGER PRIMARY KEY AUTOINCREMENT,
-            'UserName' TEXT NOT NULL,
+            'Username' TEXT NOT NULL,
+            'URL' TEXT NOT NULL,
             'BlogTitle' TEXT NOT NULL,
             'Description' TEXT NOT NULL,
-            'PostsCount' INTEGER
+            'PostsCount' INTEGER,
+            'CanAsk' TEXT NOT NULL
         );
     '''
 
@@ -284,29 +313,26 @@ def init_db():
 
 
 
-def insert_data(scraped_list, search):
+def insert_data(account):
     conn = sqlite3.connect(DBNAME)
     cur = conn.cursor()
 
+    total_account_data = get_account_info(account)
 
-    total_account_data = get_account_info(scraped_list)
-    total_account_data += get_account_info(search)
 
 
 
 
     for row in total_account_data:
-        insertion = (None, row[0], row[1], row[2], row[3])
+        insertion = (None, row[0], row[1], row[2], row[3], row[4], row[5])
         statement = 'INSERT INTO "Blogs" '
-        statement += 'VALUES (?, ?, ?, ?, ?)'
+        statement += 'VALUES (?, ?, ?, ?, ?, ?,?)'
         cur.execute(statement, insertion)
 
 
     conn.commit()
 
-    total_post_data = get_post_data(scraped_list)
-    total_post_data += get_post_data(search)
-    #print(total_post_data)
+    total_post_data = get_post_data(account)
 
     for row in total_post_data:
         insertion = (None, 0, row[0], row[1], row[2], row[3], row[4], row[5])
@@ -320,13 +346,13 @@ def insert_data(scraped_list, search):
 def update_id_data():
     conn = sqlite3.connect(DBNAME)
     cur = conn.cursor()
-    cur.execute('''SELECT Id, UserName
+    cur.execute('''SELECT Id, Username
                    FROM Blogs
     ''')
     user_id = {}
     for row in cur:
         user_id[row[1]] = row[0]
-    print(user_id)
+    #print(user_id)
 
 
     cur.execute('''SELECT BlogName
@@ -336,9 +362,7 @@ def update_id_data():
     for row in cur:
         try:
             username = row[0]
-            print(username)
             username_id = user_id[username]
-            print(username_id)
             t = (username_id, str(username))
             statement = 'UPDATE Posts '
             statement += 'SET UserId=? '
@@ -359,11 +383,280 @@ def update_id_data():
 
 
 
+# MAKE GRAPHS!
+
+def notes_line_graph(username):
+
+    conn = sqlite3.connect(DBNAME)
+    cur = conn.cursor()
+
+    statement = '''SELECT NoteCount, [Date]
+                   FROM Posts
+                   JOIN Blogs
+                   ON Posts.UserId = Blogs.Id'''
+    statement += " WHERE Blogs.Username = '{}'".format(username)
+    statement += ' ORDER BY [Date]'
+
+    cur.execute(statement)
+
+    dates = []
+    notes = []
+
+    for row in cur:
+        notes.append(row[0])
+        dates.append(row[1][:19])
+
+    trace0 = go.Scatter(
+    x = dates,
+    y = notes,
+    mode = 'lines+markers',
+    name = 'Notes Count',
+    line = dict(
+        color = ('#2ED8C1'),
+        width = 2.5
+        )
+    )
+
+    layout = go.Layout(title='Amount of Notes On Each Post',
+                xaxis=dict(title='Date of Post'),
+                yaxis=dict(title='Amount of Notes'))
+
+    data = [trace0]
+    fig = go.Figure(data=data, layout=layout)
+    py.plot(fig, filename = 'tumblr-notes-graph')
 
 
-account_identifiers = get_best_tumblrs()
+
+
+
+
+
+def post_type_pie(username):
+    conn = sqlite3.connect(DBNAME)
+    cur = conn.cursor()
+
+    statement = '''SELECT PostType
+                   FROM Posts
+                   JOIN Blogs
+                   ON Posts.UserId = Blogs.Id'''
+    statement += " WHERE Blogs.Username = '{}'".format(username)
+
+    cur.execute(statement)
+
+    post_types = {}
+    for row in cur:
+        type = row[0]
+        if type not in post_types:
+            post_types[type] = 0
+        post_types[type] += 1
+    try:
+        del post_types['NULL']
+    except:
+        pass
+
+    types = [key for key in post_types.keys()]
+    number = [value for value in post_types.values()]
+
+    colors = ['#96D38C', '#EE76FC', '#4601B0', '#C4A7F0', '#0658F0', '#06E9F0']
+
+    trace0 = go.Pie(labels=types, values=number,
+               hoverinfo='label+percent', textinfo='value',
+               textfont=dict(size=20),
+               marker=dict(colors=colors,
+                           line=dict(color='#000000', width=2)))
+
+    layout = go.Layout(title='Type of Tumblr Posts')
+
+
+    data = [trace0]
+    fig = go.Figure(data=data, layout=layout)
+    py.plot(fig, filename = 'post-type-pie')
+
+
+
+def ask_question_pie():
+
+    yes = 0
+    no = 0
+    conn = sqlite3.connect(DBNAME)
+    cur = conn.cursor()
+
+    cur.execute('''SELECT CanAsk
+                   FROM Blogs''')
+
+    for row in cur:
+        try:
+            if row[0] == 'no':
+                no += 1
+            elif row[0] == 'yes':
+                yes += 1
+        except:
+            pass
+
+
+    labels = ['Yes', 'No']
+    values = [yes,no]
+
+
+    colors = ['#FEBFB3', '#E1396C']
+
+    trace0 = go.Pie(labels=labels, values=values,
+               hoverinfo='label+percent', textinfo='value',
+               textfont=dict(size=20),
+               marker=dict(colors=colors,
+                           line=dict(color='#000000', width=2)))
+
+    layout = go.Layout(title='The Amount of Blogs that Allow Tumblr Users to Ask Them Questions')
+
+
+    data = [trace0]
+    fig = go.Figure(data=data, layout=layout)
+    py.plot(fig, filename = 'can-ask-questions-pie')
+
+
+
+
+def number_posts_bar():
+
+    data = []
+    conn = sqlite3.connect(DBNAME)
+    cur = conn.cursor()
+
+    cur.execute('''SELECT Username, PostsCount
+                   FROM Blogs''')
+
+    accounts = []
+    posts_number = []
+    for row in cur:
+        if row[0] != 'NULL':
+            accounts.append(row[0])
+            posts_number.append(row[1])
+            #print(row)
+
+    trace0 = go.Bar(x=accounts,y=posts_number,
+                    text = accounts,
+                    marker=dict(color='rgb(171,217,233)',
+                    line=dict(
+                        color='rgb(8,48,107)',
+                        width=1.5,
+                            )
+                        )
+                    )
+
+    data = [trace0]
+    layout = go.Layout(
+    title='Amount of Posts for Each Tumblr Account',
+    xaxis=dict(title='Tumblr Username'),
+    yaxis=dict(title='Number of Posts')
+    )
+
+    fig = go.Figure(data=data, layout=layout)
+    py.plot(fig, filename = 'amount-of-posts-bar')
+
+
+
+
+
+scraped_list = get_best_tumblrs()
+#search = input("What tumblr user would you like to receive information on? (enter user's url): ")
+#blog_username = input("What tumblr user would you like to receive information on? (enter user's username): ")
+
+
+
+def interaction():
+
+    conn = sqlite3.connect(DBNAME)
+    cur = conn.cursor()
+
+    response = ''
+
+    while response != 'exit':
+
+        response = input('''\nWould you like to: look up a Tumblr user, see a list of Tumblr accounts to follow, or exit?\n
+        Enter "look up a user" for information on that Tumblr blog.\n
+        Enter "who to follow" to get a list of the best art and photo Tumblr accounts determined by Jeff Hamada.\n
+        Enter "exit" to exit the program.
+            ''')
+
+        if response == 'look up a user':
+            search = input("\nWhat Tumblr user would you like to receive information on? (enter username of that tumblr): \n")
+            init_db()
+            try:
+                insert_data(search)
+            except:
+                print('\nThat Tumblr username is invalid.')
+                continue
+            update_id_data()
+
+            username = search.split('.')[0]
+            statement = '''SELECT *
+                           FROM Blogs'''
+            statement += ' WHERE Username = "{}"'.format(username)
+            cur.execute(statement)
+            for row in cur:
+                print('username: ' + str(row[1]) + ', url: ' + str(row[2]) + ', blog title: ' + str(row[3]) + ', description: ' + str(row[4]) + ', amount of posts: ' + str(row[5]))
+            graph_input = input('''\nWould you like to: view a line graph of the number of notes on posts by this user over time or view a pie chart of the types of Tumblr posts by this user?\n
+            Enter a choice of "notes line graph" or "types pie chart" or "neither" to view neither: \n''')
+            if graph_input == "notes line graph":
+                notes_line_graph(username)
+                continue
+            elif graph_input =="types pie chart":
+                post_type_pie(username)
+                continue
+            elif graph_input == 'neither':
+                continue
+            else:
+                print('\nThat input is invalid.\n')
+                continue
+
+
+        elif response == 'who to follow':
+            scraped_list = get_best_tumblrs()
+            init_db()
+            insert_data(scraped_list)
+            update_id_data()
+
+            cur.execute('''SELECT URL
+                           FROM Blogs
+            ''')
+
+            print('\nThese are the best art and photo Tumblr accounts determined by Jeff Hamada: \n')
+            for row in cur:
+                if row[0] == 'NULL':
+                    pass
+                else:
+                    print(row[0])
+            graph_input = input('''\nWould you like to: view a pie chart that displays how many of these accounts allow users to ask them questions or view a bar graph that compares the number of posts these Tumblr users have made.\n
+            Enter a choice of "ask pie chart" or "posts bar graph" or "neither" to view neither: \n''')
+            if graph_input == 'ask pie chart':
+                ask_question_pie()
+                continue
+            elif graph_input == 'posts bar graph':
+                number_posts_bar()
+            elif graph_input == 'neither':
+                continue
+            else:
+                print('\nThat input is invalid.\n')
+                continue
+
+
+
+
+        elif response == 'exit':
+            break
+
+        else:
+            print('\nSorry that input is invalid.\n')
+
+
+#account_identifiers = get_best_tumblrs()
 #get_account_info(account_identifiers)
 #get_post_data(scraped_list)
-init_db()
-insert_data(scraped_list, search)
-update_id_data()
+# init_db()
+# insert_data(scraped_list, search)
+# update_id_data()
+# number_posts_bar()
+#ask_question_pie()
+#post_type_pie(blog_username)
+#notes_line_graph(blog_username)
+interaction()
