@@ -11,13 +11,12 @@ import plotly.graph_objs as go
 import plotly
 
 plotly_api_key = secrets.plotly_api
+plotly_username = secrets.username
 
-plotly.tools.set_credentials_file(username='natc23', api_key= plotly_api_key)
+plotly.tools.set_credentials_file(username=plotly_username, api_key= plotly_api_key)
 
-#TO DO: write unit tests
+#TO DO: write read.me, requirements.txt, virtual environment??
 #FIX: connect blog_identifier (url) to username and get rid of blogname in posts
-# Close sqlite connections !!! esp in graphs!!! and interactive !!!
-# account for www. https:// and http:// in user input
 
 consumer_key = secrets.oauth_consumer_key
 consumer_secret = secrets.oauth_consumer_secret
@@ -209,8 +208,6 @@ def get_account_info(account_identifier):
         account_data.append(info)
     return account_data
 
-    #Make classes?? Account and Post then put into table?
-
 
 
 def get_post_data(account_identifier):
@@ -319,16 +316,11 @@ def insert_data(account):
 
     total_account_data = get_account_info(account)
 
-
-
-
-
     for row in total_account_data:
         insertion = (None, row[0], row[1], row[2], row[3], row[4], row[5])
         statement = 'INSERT INTO "Blogs" '
         statement += 'VALUES (?, ?, ?, ?, ?, ?,?)'
         cur.execute(statement, insertion)
-
 
     conn.commit()
 
@@ -352,8 +344,6 @@ def update_id_data():
     user_id = {}
     for row in cur:
         user_id[row[1]] = row[0]
-    #print(user_id)
-
 
     cur.execute('''SELECT BlogName
                    FROM Posts
@@ -371,7 +361,6 @@ def update_id_data():
         except:
             pass
 
-
     try:
         for ex_tup in execution_tuple:
             cur.execute(ex_tup[0], ex_tup[1])
@@ -384,31 +373,121 @@ def update_id_data():
 
 
 # MAKE GRAPHS!
+class GraphData():
+
+    def notes_data(self, username):
+        conn = sqlite3.connect(DBNAME)
+        cur = conn.cursor()
+
+        statement = '''SELECT NoteCount, [Date]
+                       FROM Posts
+                       JOIN Blogs
+                       ON Posts.UserId = Blogs.Id'''
+        statement += " WHERE Blogs.Username = '{}'".format(username)
+        statement += ' ORDER BY [Date]'
+
+        cur.execute(statement)
+
+        dates = []
+        notes = []
+
+        for row in cur:
+            notes.append(row[0])
+            dates.append(row[1][:19])
+
+        self.notes = notes
+        self.dates = dates
+
+        conn.close()
+
+    def post_type_data(self, username):
+        conn = sqlite3.connect(DBNAME)
+        cur = conn.cursor()
+
+        statement = '''SELECT PostType
+                       FROM Posts
+                       JOIN Blogs
+                       ON Posts.UserId = Blogs.Id'''
+        statement += " WHERE Blogs.Username = '{}'".format(username)
+
+        cur.execute(statement)
+
+        post_types = {}
+        for row in cur:
+            type = row[0]
+            if type not in post_types:
+                post_types[type] = 0
+            post_types[type] += 1
+        try:
+            del post_types['NULL']
+        except:
+            pass
+
+        types = [key for key in post_types.keys()]
+        number = [value for value in post_types.values()]
+
+        self.types = types
+        self.number = number
+
+        conn.close()
+
+    def ask_question_data(self):
+        yes = 0
+        no = 0
+        conn = sqlite3.connect(DBNAME)
+        cur = conn.cursor()
+
+        cur.execute('''SELECT CanAsk
+                       FROM Blogs''')
+
+        for row in cur:
+            try:
+                if row[0] == 'no':
+                    no += 1
+                elif row[0] == 'yes':
+                    yes += 1
+            except:
+                pass
+
+
+        labels = ['Yes', 'No']
+        values = [yes,no]
+
+        self.labels = labels
+        self.values = values
+
+        conn.close()
+
+    def number_posts_data(self):
+        data = []
+        conn = sqlite3.connect(DBNAME)
+        cur = conn.cursor()
+
+        cur.execute('''SELECT Username, PostsCount
+                       FROM Blogs''')
+
+        accounts = []
+        posts_number = []
+        for row in cur:
+            if row[0] != 'NULL':
+                accounts.append(row[0])
+                posts_number.append(row[1])
+
+        self.accounts = accounts
+        self.posts_number = posts_number
+
+        conn.close()
+
+
 
 def notes_line_graph(username):
 
-    conn = sqlite3.connect(DBNAME)
-    cur = conn.cursor()
-
-    statement = '''SELECT NoteCount, [Date]
-                   FROM Posts
-                   JOIN Blogs
-                   ON Posts.UserId = Blogs.Id'''
-    statement += " WHERE Blogs.Username = '{}'".format(username)
-    statement += ' ORDER BY [Date]'
-
-    cur.execute(statement)
-
-    dates = []
-    notes = []
-
-    for row in cur:
-        notes.append(row[0])
-        dates.append(row[1][:19])
+    x = GraphData()
+    x.notes_data(username)
 
     trace0 = go.Scatter(
-    x = dates,
-    y = notes,
+    x = x.dates,
+    y = x.notes,
     mode = 'lines+markers',
     name = 'Notes Count',
     line = dict(
@@ -427,39 +506,14 @@ def notes_line_graph(username):
 
 
 
-
-
-
-
 def post_type_pie(username):
-    conn = sqlite3.connect(DBNAME)
-    cur = conn.cursor()
 
-    statement = '''SELECT PostType
-                   FROM Posts
-                   JOIN Blogs
-                   ON Posts.UserId = Blogs.Id'''
-    statement += " WHERE Blogs.Username = '{}'".format(username)
-
-    cur.execute(statement)
-
-    post_types = {}
-    for row in cur:
-        type = row[0]
-        if type not in post_types:
-            post_types[type] = 0
-        post_types[type] += 1
-    try:
-        del post_types['NULL']
-    except:
-        pass
-
-    types = [key for key in post_types.keys()]
-    number = [value for value in post_types.values()]
+    x = GraphData()
+    x.post_type_data(username)
 
     colors = ['#96D38C', '#EE76FC', '#4601B0', '#C4A7F0', '#0658F0', '#06E9F0']
 
-    trace0 = go.Pie(labels=types, values=number,
+    trace0 = go.Pie(labels=x.types, values=x.number,
                hoverinfo='label+percent', textinfo='value',
                textfont=dict(size=20),
                marker=dict(colors=colors,
@@ -476,31 +530,12 @@ def post_type_pie(username):
 
 def ask_question_pie():
 
-    yes = 0
-    no = 0
-    conn = sqlite3.connect(DBNAME)
-    cur = conn.cursor()
-
-    cur.execute('''SELECT CanAsk
-                   FROM Blogs''')
-
-    for row in cur:
-        try:
-            if row[0] == 'no':
-                no += 1
-            elif row[0] == 'yes':
-                yes += 1
-        except:
-            pass
-
-
-    labels = ['Yes', 'No']
-    values = [yes,no]
-
+    x = GraphData()
+    x.ask_question_data()
 
     colors = ['#FEBFB3', '#E1396C']
 
-    trace0 = go.Pie(labels=labels, values=values,
+    trace0 = go.Pie(labels=x.labels, values=x.values,
                hoverinfo='label+percent', textinfo='value',
                textfont=dict(size=20),
                marker=dict(colors=colors,
@@ -518,23 +553,11 @@ def ask_question_pie():
 
 def number_posts_bar():
 
-    data = []
-    conn = sqlite3.connect(DBNAME)
-    cur = conn.cursor()
+    x = GraphData()
+    x.number_posts_data()
 
-    cur.execute('''SELECT Username, PostsCount
-                   FROM Blogs''')
-
-    accounts = []
-    posts_number = []
-    for row in cur:
-        if row[0] != 'NULL':
-            accounts.append(row[0])
-            posts_number.append(row[1])
-            #print(row)
-
-    trace0 = go.Bar(x=accounts,y=posts_number,
-                    text = accounts,
+    trace0 = go.Bar(x=x.accounts,y=x.posts_number,
+                    text = x.accounts,
                     marker=dict(color='rgb(171,217,233)',
                     line=dict(
                         color='rgb(8,48,107)',
@@ -554,14 +577,7 @@ def number_posts_bar():
     py.plot(fig, filename = 'amount-of-posts-bar')
 
 
-
-
-
-scraped_list = get_best_tumblrs()
-#search = input("What tumblr user would you like to receive information on? (enter user's url): ")
-#blog_username = input("What tumblr user would you like to receive information on? (enter user's username): ")
-
-
+#Make Program Interactive
 
 def interaction():
 
@@ -640,13 +656,13 @@ def interaction():
                 continue
 
 
-
-
         elif response == 'exit':
             break
 
         else:
             print('\nSorry that input is invalid.\n')
+
+    conn.close()
 
 
 #account_identifiers = get_best_tumblrs()
