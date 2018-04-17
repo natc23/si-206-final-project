@@ -15,8 +15,6 @@ plotly_username = secrets.username
 
 plotly.tools.set_credentials_file(username=plotly_username, api_key= plotly_api_key)
 
-#TO DO: write read.me, requirements.txt, virtual environment??
-#FIX: connect blog_identifier (url) to username and get rid of blogname in posts
 
 consumer_key = secrets.oauth_consumer_key
 consumer_secret = secrets.oauth_consumer_secret
@@ -157,7 +155,6 @@ def get_best_tumblrs():
         best_tumblrs.append(blog.text)
     return best_tumblrs
 
-#get_best_tumblrs()
 
 #GET THE DATA FROM TUMBLR
 def get_account_info(account_identifier):
@@ -167,8 +164,7 @@ def get_account_info(account_identifier):
     if type(account_identifier) == list:
         for account in account_identifier:
             data = get_tumblr_data_using_cache(account)
-            #print(data)
-            #account_data += account[data]
+
             try:
                 blog = data['blog']
                 user_name = blog['name']
@@ -216,14 +212,13 @@ def get_post_data(account_identifier):
     if type(account_identifier) == list:
         for account in account_identifier:
             data = get_tumblr_post_data_using_cache(account)
-            #print(data)
+
             for post in data:
-                #print(post)
+
                 try:
                     posts = data['posts']
                     for post in posts:
-                        #print(post)
-                        #print("----------------------------------")
+
                         post_id = post['id']
                         blog_name = post['blog_name']
                         post_url = post['post_url']
@@ -664,15 +659,4 @@ def interaction():
 
     conn.close()
 
-
-#account_identifiers = get_best_tumblrs()
-#get_account_info(account_identifiers)
-#get_post_data(scraped_list)
-# init_db()
-# insert_data(scraped_list, search)
-# update_id_data()
-# number_posts_bar()
-#ask_question_pie()
-#post_type_pie(blog_username)
-#notes_line_graph(blog_username)
 interaction()
